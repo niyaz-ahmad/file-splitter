@@ -1,0 +1,146 @@
+#!/bin/bash
+
+Kb=2**10
+Mb=2**20
+MIN_CHUNK_SIZE=100*Kb
+MAX_CHUNK_SIZE=100*Mb
+
+echo -e "\n                    File Splitter                       "
+echo -e "========================================================="
+echo -e "                                   Create by: Niyaz Ahmad\n\n"
+echo -e "Following file/s exist in the current directory:\n"
+
+ls -phl . | grep -Ev '/'    # hides all directories including . & ..
+echo -e "\n\n"
+read -p "Please Enter the filename you would like to split : " fname
+
+until [ -f ${fname} ]
+do
+    echo -e "\tFile '$fname' does not exist in current directory."
+    echo -e "\tPlease enter a file name that exists in currect directory."
+    echo -e "\tFilenames are case-sensitive.\n"
+    read -p "Please Enter the filename you would like to split : " fname
+done
+
+fname_size=`du -b $fname | cut -f1`
+fname_size_h=`du -h $fname | cut -f1`
+
+echo -n "File size: ${fname_size}bytes = ${fname_size_h}"
+
+
+echo -e "\nPlease choose splitting method for this file:"
+echo -e "\t1 - Enter chunk size; File will be splitted into chunks of specified size."
+echo -e "\t2 - Enter count of chunks; File will be splitted in equal sized chunks.\n"
+
+read -p "Splitting method choice [1 or 2] : " method
+
+until [[ $method =~ [12] ]]
+do
+    echo -e "\tThat's not an option. \n\tPlease carefully read the provided options.\n"
+    read -p "Splitting method choice [1 or 2] : " method
+done
+
+validation_msg=""
+validated=0
+if [[ $method -eq 1 ]]; then
+    read -p "Please enter the size of file in KBs or MBs [ending with K or M] : " user_chunk
+    chunk_unit_name=${user_chunk: -1}
+    chunk_size_h=${user_chunk::-1}
+    let chunk_unit=0
+    echo -e "\n\tunit: $chunk_unit_name, nums : $chunk_size_h"
+    
+    if [[ $chunk_unit_name =~ [Kk] ]]; then         # check for Kbs
+        chunk_unit=Kb
+        let validated+=1
+    elif [[ $chunk_unit_name =~ [Mm] ]]; then       # check for Mbs
+        chunk_unit=Mb
+        let validated+=1
+    else
+        validation_msg+="\n\t - Invalid UNIT [$chunk_unit_name]."
+        let validated-=1
+    fi
+    
+    if [[ $chunk_size_h =~ [0-9]* ]]; then           # test the file chunk_nums
+        let chunk_size=chunk_size_h*chunk_unit
+#         echo -e "chunk_size=${chunk_size}"
+        let chunks_count=fname_size/chunk_size
+        let validated+=1
+    else
+        validation_msg+="\n\t - Invalid SIZE [$chunk_size_h]."
+        let validated-=1
+    fi
+    
+elif [[ $method -eq 2 ]]; then      # user specified count of chunks.
+    read -p "Please enter count of files to be created out of selected file ($fname) : " chunks_count
+    let chunk_size=fname_size/chunks_count
+#     echo -e "chunks_count: $chunks_count, chunk_size: $chunk_size"
+    if [[ chunk_size -gt Mb ]]; then    # a bad chunks_count will make chunk_size zero/null
+        chunk_unit_name='M'
+        let chunk_size_h=chunk_size/Mb
+    else
+        chunk_unit_name='K'
+        let chunk_size_h=chunk_size/Kb
+    fi
+    let validated+=2    # match first option's validation strength
+else
+    echo -e "Error[01]: Please save a screenshot and inform the script creator Mr Niyaz Ahmad."
+fi
+
+if [[ ! $chunk_size =~ [0-9]* ]] && [[ validated -gt 1 ]]; then
+    validation_msg+="\n\t - Can not calculate chunk size."
+    let validated-=1
+elif [[ $chunk_size -lt MIN_CHUNK_SIZE ]] && [[ validated -gt 1 ]]; then
+    validation_msg+="\n\t - your choice makes too small chunks of [${chunk_size_h}]${chunk_unit_name}"
+    let validated-=1
+elif [[ $chunk_size -gt MAX_CHUNK_SIZE ]] && [[ validated -gt 1 ]]; then
+    validation_msg+="\n\t - Your choice makes too large chunks of size [$chunk_size_h]$chunk_unit_name."
+    let validated-=1
+else
+    validated+=1
+fi
+
+if [[ validated -lt 3 ]]; then                  # exit if any of validations fails
+    echo -e "\n\nInvalid value entered:$validation_msg"
+    echo -e "\n\nPlease run the command again."
+    exit -1
+fi
+
+echo -e "Going to split file '$fname' [$fname_size_h] into $chunks_count chunks of ${chunk_size_h}${chunk_unit_name} + partial chunk."
+
+read -p "Shall we proceed? [yY] : " confirmation
+
+if [[ ! $confirmation =~ [yY] ]]; then
+    echo -e "\n\n\tUser did not confirm.\n\tExited."
+    exit -2
+fi
+
+let suffix_length=1
+let temp=chunks_count/10
+while [[ temp -gt 0 ]]; do
+    let suffix_length+=1
+    let temp/=10
+done
+
+# echo -e "suffix_length = $suffix_length"
+
+subdir=${fname}'_dir'
+orig_dir=`pwd`
+mkdir $subdir
+cp $fname $subdir
+cd $subdir
+new_dir=`pwd`
+
+if [[ $method -eq 1 ]]; then
+    split -d --suffix-length=${suffix_length}  -b ${chunk_size} ${fname} ${fname}_
+elif [[ $method -eq 2 ]]; then
+    split -d --suffix-length=${suffix_length}  --number=l/${chunks_count} ${fname} ${fname}_
+else    
+    echo -e "Error[02]: Please save a screenshot and inform the script creator Mr Niyaz Ahmad."
+fi
+
+rm -f ${fname}
+echo -e "File [$fname] splitted in following chunks:"
+ls
+cd ..
+
+exit 0
